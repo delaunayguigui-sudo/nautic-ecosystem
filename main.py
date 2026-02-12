@@ -5,7 +5,7 @@ from datetime import datetime
 app = FastAPI()
 
 # Configuration Airtable
-AIRTABLE_TOKEN = "patk8yZoyU4mHYnoy"
+AIRTABLE_TOKEN = "pat9vFzgmHe6fQuVz.8bd93fb8e3517b836bd5ace8ea31ed1ccc7038238e07f6c4309f8f935472ed6f"
 BASE_ID = "appArcT0oOcTFjVRp"
 TABLE_NAME = "tblrlCheKVSCX1ntE"
 
@@ -45,3 +45,4 @@ async def get_records():
     url = f"https://api.airtable.com/v0/{BASE_ID}/{TABLE_NAME}"
     response = requests.get(url, headers=headers)
     return response.json()
+
