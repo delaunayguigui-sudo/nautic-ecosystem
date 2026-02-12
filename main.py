@@ -4,24 +4,28 @@ from datetime import datetime
 
 app = FastAPI()
 
-# 🔑 Remplace par ton Token PAT (créé sur airtable.com/create/tokens)
+# Configuration Airtable
 AIRTABLE_TOKEN = "patk8yZoyU4mHYnoy"
 BASE_ID = "appArcT0oOcTFjVRp"
-TABLE_NAME = "Maintenance Tasks" # Nom de ta table de suivi
+TABLE_NAME = "tblrlCheKVSCX1ntE"
+
+@app.get("/")
+async def root():
+    return {"message": "API Nautic Operationnelle - En attente de donnees"}
 
 @app.post("/bateaux")
 async def save_to_airtable(request: Request):
     data = await request.json()
     
-    # Préparation des données pour Airtable
-    # Assure-toi que les noms correspondent à tes colonnes (image_78ba02.png)
+    # Préparation des champs pour Airtable
+    # On adapte selon tes colonnes (Nom du Bateau, Heures Moteur, Notes, etc.)
     payload = {
         "fields": {
-            "Boat": [data.get("boat_id")], # ID du bateau lié
-            "Maintenance Type": [data.get("task_id")], # ID de la tâche liée
-            "Status": "Completed",
-            "Completion Date": datetime.now().strftime("%Y-%m-%d"),
-            "Notes": data.get("notes", "Pointage via Telegram")
+            "Nom_Bateau": data.get("nom", "Inconnu"),
+            "Heures_Moteur": data.get("heures", 0),
+            "Description": data.get("notes", "Pointage via Telegram"),
+            "Date_Intervention": datetime.now().strftime("%Y-%m-%d"),
+            "Statut": "Pointé"
         }
     }
     
@@ -32,4 +36,12 @@ async def save_to_airtable(request: Request):
     
     url = f"https://api.airtable.com/v0/{BASE_ID}/{TABLE_NAME}"
     response = requests.post(url, json=payload, headers=headers)
+    
+    return response.json()
+
+@app.get("/bateaux")
+async def get_records():
+    headers = {"Authorization": f"Bearer {AIRTABLE_TOKEN}"}
+    url = f"https://api.airtable.com/v0/{BASE_ID}/{TABLE_NAME}"
+    response = requests.get(url, headers=headers)
     return response.json()
