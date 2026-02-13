@@ -1,43 +1,30 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 import requests
+import os
 
 app = FastAPI()
 
 # ---------------------------------------------------------
 # CONFIGURATION
 # ---------------------------------------------------------
-
-# Ton Token personnel (Celui que tu viens de me donner)
+# Ton Token personnel
 AIRTABLE_TOKEN = "pat9vFzgmHe6fQuVz.8bd93fb8e3517b836bd5ace8ea31ed1ccc7038238e07f6c4309f8f935472ed6f"
-
-# L'ID de ta base "MaintenanceNautique"
 BASE_ID = "appArcT0oOcTFjVRp"
 
-# Les entêtes pour s'authentifier auprès d'Airtable
+# Headers pour l'authentification
 HEADERS = {
     "Authorization": f"Bearer {AIRTABLE_TOKEN}",
     "Content-Type": "application/json"
 }
 
 # ---------------------------------------------------------
-# FONCTIONS UTILITAIRES
+# MODÈLE DE DONNÉES (Pour valider ce que Make envoie)
 # ---------------------------------------------------------
-
-def get_table_data(table_name):
-    """
-    Récupère toutes les lignes d'une table spécifique.
-    Gère les espaces dans les noms de tables automatiquement.
-    """
-    url = f"https://api.airtable.com/v0/{BASE_ID}/{table_name}"
-    response = requests.get(url, headers=HEADERS)
-    
-    if response.status_code == 200:
-        data = response.json()
-        return data.get("records", [])
-    else:
-        # En cas d'erreur, on affiche le problème dans les logs Render
-        print(f"Erreur sur la table {table_name}: {response.text}")
-        return []
+class MaintenanceTask(BaseModel):
+    boat_name: str
+    description: str
+    status: str = "Pending"  # Par défaut, le statut est "En attente"
 
 # ---------------------------------------------------------
 # ROUTES DE L'API
@@ -45,22 +32,63 @@ def get_table_data(table_name):
 
 @app.get("/")
 def home():
-    return {"status": "API Nautic en ligne ⚓️", "version": "2.0"}
+    return {"status": "API Nautic Operationnelle ⚓️", "mode": "Lecture & Ecriture"}
 
+# 1. ROUTE POUR LIRE (GET) - Celle qu'on a faite avant
 @app.get("/full-data")
 def get_full_data():
-    """
-    Cette route récupère TOUT ce dont Gemini a besoin en une seule fois.
-    Elle interroge les 4 tables principales.
-    """
-    return {
-        "bateaux": get_table_data("Boats"),
-        "taches_maintenance": get_table_data("Maintenance Tasks"),
-        "types_maintenance": get_table_data("Maintenance Types"),
-        "techniciens": get_table_data("Technicians")
-    }
+    """Récupère Bateaux, Tâches et Techniciens en un seul appel"""
+    tables = ["Boats", "Maintenance Tasks", "Maintenance Types", "Technicians"]
+    data = {}
+    
+    for table in tables:
+        url = f"https://api.airtable.com/v0/{BASE_ID}/{table}"
+        response = requests.get(url, headers=HEADERS)
+        if response.status_code == 200:
+            data[table] = response.json().get("records", [])
+        else:
+            data[table] = []
+            
+    return data
 
-# Route individuelle au cas où tu en aurais besoin pour des tests
-@app.get("/bateaux")
-def get_boats():
-    return get_table_data("Boats")
+# 2. ROUTE POUR ÉCRIRE (POST) - La nouveauté !
+@app.post("/create-task")
+async def create_maintenance_task(task: MaintenanceTask):
+    """
+    Reçoit une demande de maintenance depuis Make/Telegram
+    et la crée dans Airtable.
+    """
+    
+    # Étape 1 : Trouver l'ID du bateau à partir de son nom
+    # On doit chercher dans la table "Boats" quel ID correspond au nom reçu
+    url_search = f"https://api.airtable.com/v0/{BASE_ID}/Boats?filterByFormula={{Boat Name}}='{task.boat_name}'"
+    search_response = requests.get(url_search, headers=HEADERS)
+    
+    boat_id = None
+    if search_response.status_code == 200:
+        records = search_response.json().get("records", [])
+        if records:
+            boat_id = records[0]["id"]
+    
+    if not boat_id:
+        # Si on ne trouve pas le bateau, on arrête tout
+        raise HTTPException(status_code=404, detail=f"Bateau '{task.boat_name}' introuvable.")
+
+    # Étape 2 : Créer la tâche dans "Maintenance Tasks"
+    url_post = f"https://api.airtable.com/v0/{BASE_ID}/Maintenance%20Tasks"
+    
+    # On prépare les données pour Airtable
+    payload = {
+        "fields": {
+            "Description": task.description,
+            "Status": task.status,
+            "Related Boat": [boat_id]  # On lie la tâche au bon bateau via son ID
+        }
+    }
+    
+    response = requests.post(url_post, json=payload, headers=HEADERS)
+    
+    if response.status_code == 200:
+        return {"message": "Tâche créée avec succès !", "data": response.json()}
+    else:
+        raise HTTPException(status_code=response.status_code, detail=response.text)
